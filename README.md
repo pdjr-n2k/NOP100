@@ -2,9 +2,12 @@
 
 The **NOP100** project implements an
 [NMEA 2000](https://en.wikipedia.org/wiki/NMEA_2000)
-interface module with twin
+interface module with
 [MikroBUS](https://www.mikroe.com/mikrobus)
-sockets which allow specialisation of function by the addition of
+and
+[OneWire]()
+interfaces.
+Twin MikroBUS sockets allow specialisation of function by the addition of
 [Click](https://www.mikroe.com/click)
 expansion cards and appropriate software extensions.
 
@@ -16,8 +19,7 @@ interface.
 [**NOP100** firmware](./firmware/README.md)
 manages NMEA 2000 connectivity, user interaction and module
 configuration and is easily extended by the addition of firmware
-dedicated to interfacing any installed MikroBus cards and integrating
-their function with NMEA 2000.
+dedicated to interfacing any installed MikroBus and OneWire devices.
 
 ## Project organisation
 
