@@ -42,6 +42,7 @@
 
 #include "includes.h"
 
+
 /**********************************************************************
  * @brief Configure debug output to Teensy serial port.
  */
@@ -94,7 +95,7 @@
 #define GPIO_PISO_DATA GPIO_D14
 #define GPIO_PISO_LATCH GPIO_D15
 #define GPIO_PISO_CLOCK GPIO_D16
-#define GPIO_LED_PRG GPIO_D17
+#define GPIO_ONE_WIRE GPIO_D17
 #define GPIO_I2C_SDA GPIO_D18
 #define GPIO_I2C_SCL GPIO_D19
 #define GPIO_BUTTON_PRG GPIO_D20
@@ -151,39 +152,49 @@
 #define PRODUCT_LEN 1                   // This device's LEN
 #define PRODUCT_N2K_VERSION 2100        // N2K specification version 2.1
 #define PRODUCT_SERIAL_CODE "002-849"   // PRODUCT_CODE + DEVICE_UNIQUE_NUMBER
-#define PRODUCT_TYPE "PDJRSIM"           // The product name?
+#define PRODUCT_TYPE "NOP100"           // The product name?
 #define PRODUCT_VERSION "1.0 (Mar 2022)"
 
 /**********************************************************************
- * @brief NMEA2000 transmit and receive PGNs.
- * 
- * NMEA_TRANSMITTED_PGNS is a zero terminated array initialiser that
- * lists all the PGNs we transmit.
- * 
- * NMEA_RECEIVED_PGNS is a an array initialiser consisting of pairs
- * which associate the PGN of a message we will accept to a callback
- * which will accept a received message. For example,
+ * @brief NMEA_TRANSMITTED_PGNS is a null terminated array initialiser
+ * that lists all the PGNs we transmit.
+ */
+#ifndef NMEA_TRANSMITTED_PGNS
+#define NMEA_TRANSMITTED_PGNS { 0L }
+#endif
+
+/**********************************************************************
+ * @brief NMEA_RECEIVED_PGNS is a an array initialiser consisting of
+ * pairs which associate the PGN of a message we will accept to a
+ * callback which will accept a received message. For example,
  * { 127501L, handlerForPgn127501 }. The list must terminate with the
  * special flag value { 0L, 0 }.
  */
-#define NMEA_TRANSMITTED_PGNS { 0L }
+#ifndef NMEA_RECEIVED_PGNS
 #define NMEA_RECEIVED_PGNS  { { 0L, 0 } }
+#endif
 
 /**********************************************************************
- * @brief ModuleConfiguration library stuff.
+ * @brief EEPROM_STORAGE_ADDRESS specifies the EEPROM address where
+ * module configuration data should be persisted.
  */
-#define MODULE_CONFIGURATION_SIZE 1
-#define MODULE_CONFIGURATION_EEPROM_STORAGE_ADDRESS 0
-
-#define MODULE_CONFIGURATION_CAN_SOURCE_INDEX 0
-#define MODULE_CONFIGURATION_CAN_SOURCE_DEFAULT 22
-
-#define MODULE_CONFIGURATION_DEFAULT { \
-  MODULE_CONFIGURATION_CAN_SOURCE_DEFAULT \
-}
+#ifndef EEPROM_STORAGE_ADDRESS
+#define EEPROM_STORAGE_ADDRESS 0
+#endif
 
 /**********************************************************************
- * @brief FunctionMapper library stuff.
+ * @brief CAN_SOURCE_ADDRESS specifies the CAN source address that
+ * should be used by default when the module first connects to the host
+ * bus.
+ */
+#ifndef CAN_SOURCE_ADDRESS
+#define CAN_SOURCE_ADDRESS 0x22
+#endif
+
+/**********************************************************************
+ * @brief FUNCTION_MAP_ARRAY defines an array initialiser which maps a
+ * function code to a function which implements the action associated
+ * with each code. FunctionMapper library stuff.
  * 
  * This provides just one function that wipes configuration data from
  * EEPROM. A specialisation of NOP100 that needs to add functions to
@@ -196,8 +207,8 @@
 /**********************************************************************
  * @brief ModuleOperatorInterface library stuff.
  */
-#define MODULE_OPERATOR_INTERFACE_LONG_BUTTON_PRESS_INTERVAL 1000UL
-#define MODULE_OPERATOR_INTERFACE_DIALOG_INACTIVITY_TIMEOUT 30000UL
+#define LONG_BUTTON_PRESS_INTERVAL 1000UL
+#define DIALOG_INACTIVITY_TIMEOUT 30000UL
 
 /**********************************************************************
  * @brief LedManager library stuff.
@@ -206,9 +217,59 @@
  * one to provide feedback in the configuration user-interface.
  */
 #define CAN_LED_UPDATE_INTERVAL 100UL
-#define PRG_LED_UPDATE_INTERVAL 100UL
 
 #include "defines.h"
+
+/**********************************************************************
+ * @brief moduleConfiguration is a union used to captures persistent
+ * module configuration data. The configuration is defined as a
+ * structure and reflected as byte array suitable for saving to and
+ * loading from EEPROM.
+ * 
+ * Any application built on NOP100 will need to declare, define and
+ * initialise its own moduleConfiguration and also define the
+ * MODULE_CONFIGURATION symbol so that the following minimal default is
+ * not used. All specialised moduleConfiguration unions **MUST**
+ * include a canSourceAddress field.
+ */
+#ifndef MODULE_CONFIGURATION
+#define MODULE_CONFIGURATION
+
+typedef union tModuleConfiguration {
+  #pragma pack(push, 1)
+  struct {
+    byte canSourceAddress;
+  } structure;
+  #pragma pack(pop)
+  unsigned char buffer[sizeof(structure)];
+};
+
+tModuleConfiguration moduleConfiguration = { .structure={ CAN_SOURCE_ADDRESS_DEFAULT } };
+
+#endif
+
+/**********************************************************************
+ * @brief moduleConfigurator 
+ */
+#ifndef MODULE_CONFIGURATOR
+#define MODULE_CONFIGURATOR
+
+bool processAddress(unsigned int address) {
+  return((address >= 0) && (address < sizeof(moduleConfiguration.structure)));
+}
+
+bool processValue(unsigned int address, unsigned char value) {
+  bool retval = false;
+  if ((address >= 0) && (address < sizeof(moduleConfiguration.structure))) {
+    moduleConfiguration.buffer[address] = value;
+    EEPROM.put(EEPROM_STORAGE_ADDRESS, moduleConfiguration.structure);
+    retval = true;
+  }
+  return(retval);
+}
+
+
+#endif
 
 /**
  * @brief Declarations of local functions.
@@ -236,34 +297,6 @@ typedef struct { unsigned long PGN; void (*Handler)(const tN2kMsg &N2kMsg); } tN
 tNMEA2000Handler NMEA2000Handlers[] = NMEA_RECEIVED_PGNS;
 
 /**
- * @brief Create a ModuleConfiguration object for managing all module
- *        configuration data.
- * 
- * ModuleConfiguration implements the ModuleOperatorInterfaceHandler interface
- * and can be managed by the user-interaction manager.
-*/
-unsigned char defaultConfiguration[] = MODULE_CONFIGURATION_DEFAULT;
-ModuleConfiguration ModuleConfiguration(defaultConfiguration, MODULE_CONFIGURATION_SIZE, MODULE_CONFIGURATION_EEPROM_STORAGE_ADDRESS, configurationValidator);
-
-/**
- * @brief Create a FunctionHandler object for managing all extended
- *        configuration functions.
- * 
- * FunctionHandler implements the ModuleOperatorInterfaceHandler interface
- * and can be managed by the user-interaction manager. We'all add
- * functions later in setup().
- */
-FunctionMapper::FunctionMap functionMapArray[] = FUNCTION_MAP_ARRAY;
-FunctionMapper FunctionMapper(functionMapArray, FUNCTION_MAPPER_SIZE);
-
-/**
- * @brief Create a ModuleOperatorInterface supporting ModuleConfiguration and
- *        FunctionHandler objects.
- */
-ModuleOperatorInterfaceClient *modeHandlers[] = { &ModuleConfiguration, &FunctionMapper, 0 };
-ModuleOperatorInterface ModuleOperatorInterface(modeHandlers);
-
-/**
  * @brief Button object for debouncing the module's PRG button.
  */
 Button PRGButton(GPIO_BUTTON_PRG);
@@ -281,7 +314,6 @@ IC74HC165 CodeSwitchPISO (GPIO_PISO_CLOCK, GPIO_PISO_DATA, GPIO_PISO_LATCH);
  * callback just uses a digital write operation to drive the output.
  */
 LedManager CanLed([](unsigned int status){ digitalWrite(GPIO_LED_CAN, (status & 0x01)); }, CAN_LED_UPDATE_INTERVAL);
-LedManager PrgLed([](unsigned int status){ digitalWrite(GPIO_LED_PRG, (status & 0x01)); }, PRG_LED_UPDATE_INTERVAL);
 
 #include "definitions.h"
 
@@ -299,7 +331,6 @@ void setup() {
   pinMode(GPIO_MIKROBUS_MODULE0_CS, OUTPUT);
   pinMode(GPIO_MIKROBUS_MODULE1_CS, OUTPUT);
   pinMode(GPIO_LED_CAN, OUTPUT);
-  pinMode(GPIO_LED_PRG, OUTPUT);
 
   SPI.begin();
 
@@ -309,16 +340,19 @@ void setup() {
   
   // Run a startup sequence in the LED display: all LEDs on to confirm
   // function.
-  CanLed.setStatus(0xff); PrgLed.setStatus(0xff);
+  CanLed.setStatus(0xff);
   delay(100);
-  CanLed.setStatus(0x00); PrgLed.setStatus(0x00);
+  CanLed.setStatus(0x00);
 
   #include "setup.h"
+
+  // Load any existing configuration
+  EEPROM.get(EEPROM_STORAGE_ADDRESS, moduleConfiguration.structure);
 
   // Initialise and start N2K services.
   NMEA2000.SetProductInformation(PRODUCT_SERIAL_CODE, PRODUCT_CODE, PRODUCT_TYPE, PRODUCT_FIRMWARE_VERSION, PRODUCT_VERSION);
   NMEA2000.SetDeviceInformation(DEVICE_UNIQUE_NUMBER, DEVICE_FUNCTION, DEVICE_CLASS, DEVICE_MANUFACTURER_CODE);
-  NMEA2000.SetMode(tNMEA2000::N2km_ListenAndNode, ModuleConfiguration.getByte(MODULE_CONFIGURATION_CAN_SOURCE_INDEX)); // Configure for sending and receiving.
+  NMEA2000.SetMode(tNMEA2000::N2km_ListenAndNode, moduleConfiguration.structure.canSourceAddress); // Configure for sending and receiving.
   NMEA2000.EnableForward(false); // Disable all msg forwarding to USB (=Serial)
   NMEA2000.ExtendTransmitMessages(TransmitMessages); // Tell library which PGNs we transmit
   NMEA2000.SetMsgHandler(messageHandler);
@@ -348,7 +382,11 @@ void loop() {
   // change and if so save the new address to EEPROM for future re-use.
   NMEA2000.ParseMessages();
   if (NMEA2000.ReadResetAddressChanged()) {
-    ModuleConfiguration.setByte(MODULE_CONFIGURATION_CAN_SOURCE_INDEX, NMEA2000.GetN2kSource());
+    moduleConfiguration.structure.canSourceAddress = NMEA2000.GetN2kSource();
+    EEPROM.put(EEPROM_STORAGE_ADDRESS, moduleConfiguration.structure);
+    #ifdef DEBUG_SERIAL
+    Serial.print("N2K Source address updated to "); Serial.println(moduleConfiguration.structure.canSourceAddress);
+    #endif
   }
 
   #include "loop.h"
@@ -392,6 +430,7 @@ void messageHandler(const tN2kMsg &N2kMsg) {
 }
 
 #ifndef CONFIGURATION_VALIDATOR
+#define CONFIGURATION_VALIDATOR
 /**
  * @brief ModuleConfiguration validation callback.
  * 
@@ -418,6 +457,7 @@ bool configurationValidator(unsigned int index, unsigned char value) {
 #endif
 
 #ifndef ON_N2K_OPEN
+#define ON_N2K_OPEN
 /**
  * @brief Function called by the NMEA2000 library once the CAN bus is
  * active.

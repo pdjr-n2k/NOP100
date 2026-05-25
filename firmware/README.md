@@ -40,16 +40,17 @@ application.
 
 ## Module configuration
 
-NOP100 treats persistent configuration data as a simple byte array and
-provides a user interface which allows the hardware DIL switch to be  
-used sequentially to specify a storage address and the value to be
-stored at that address.
-This restricts the configuration data cache to a size of 256 bytes with
-254 bytes available to the application.
+Modules based on NOP100 are intended to support structured
+configuration updates via PGN126208 Command Group Function or by use
+of the hardware DIL switch which allows byte-level updates to binary
+configuration data. This restricts the configuration data cache to a
+size of 256 bytes with 254 bytes available to the application.
+
 The Teensy microcontroller has a about 1KB of EEPROM available and if
 you want to access more than 256 bytes of this storage then you will
 need to override NOP100's simple configuration model with a more
 elaborate one of your own.
+
 If you do this, make sure that your application configuration data
 leaves address locations 0 and 1 for use by NOP100.
 

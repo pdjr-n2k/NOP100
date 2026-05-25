@@ -5,7 +5,8 @@ The **NOP100** project implements an
 interface module with twin
 [MikroBUS](https://www.mikroe.com/mikrobus)
 sockets which allow specialisation of function by the addition of
-[Click](https://www.mikroe.com/click) expansion cards.
+[Click](https://www.mikroe.com/click)
+expansion cards and appropriate software extensions.
 
 [**NOP100** hardware](./hardware/README.md)
 is based on the Teensy 4.0 micro-controller supported by a CAN
@@ -15,8 +16,8 @@ interface.
 [**NOP100** firmware](./firmware/README.md)
 manages NMEA 2000 connectivity, user interaction and module
 configuration and is easily extended by the addition of firmware
-dedicated to operation of the installed MikroBus cards and the
-integration of their function with NMEA 2000.
+dedicated to interfacing any installed MikroBus cards and integrating
+their function with NMEA 2000.
 
 ## Project organisation
 
