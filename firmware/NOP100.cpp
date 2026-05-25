@@ -268,7 +268,6 @@ bool processValue(unsigned int address, unsigned char value) {
   return(retval);
 }
 
-
 #endif
 
 /**
