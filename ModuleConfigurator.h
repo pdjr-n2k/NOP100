@@ -30,6 +30,9 @@
  * the host application to validate entered values.
  */
 
+ #define CONFIGURATOR_LONG_BUTTON_PRESS 1000UL
+ #define CONFIGURATOR_DEFAULT_TIMEOUT 30000UL
+
 class ModuleConfigurator {
 
   public:
@@ -37,7 +40,7 @@ class ModuleConfigurator {
   /**
    * @brief Result codes for the handleButtonEvent() method.
    */
-  enum Outcome { MODE_CHANGE, ADDRESS_ACCEPTED, ADDRESS_REJECTED, VALUE_ACCEPTED, VALUE_REJECTED };
+  enum Outcome { ADDRESS_ACCEPTED, ADDRESS_REJECTED, VALUE_ACCEPTED, VALUE_REJECTED };
 
   /**
    * @brief ModuleConfigurator creates a new ModuleConfigurator instance.
@@ -54,14 +57,7 @@ class ModuleConfigurator {
    * @param processAddress - callback function for processing (most likely validating) an entered address.
    * @param processValue - callback function for processing (most likely validating) an entered value.
    */
-  ModuleConfigurator(bool (*processAddress)(unsigned int address), bool (*processValue)(unsigned int address, unsigned char value));
-
-  /**
-   * @brief Get the time in milliseconds of the last invocation of the handleButtonEvent().
-   * 
-   * @return unsigned long - timetsamp in milliseconds.
-   */
-  unsigned long getButtonPressedAt();
+  ModuleConfigurator(bool (*processAddress)(unsigned int address), bool (*processValue)(unsigned int address, unsigned char value), unsigned long timeout=CONFIGURATOR_DEFAULT_TIMEOUT);
 
   /**
    * @brief Handle a user interaction event (i.e. the press or release of the interface button).
@@ -102,9 +98,10 @@ class ModuleConfigurator {
   private:
     bool (*processAddress)(unsigned int address);
     bool (*processValue)(unsigned int address, unsigned char value);
-    unsigned int currentMode;
+    unsigned int address;
+    bool addressIsValid;
     unsigned long buttonPressedAt;
-    unsigned long revertInterval;
+    unsigned long timeout;
 
 };
 

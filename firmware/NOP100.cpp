@@ -35,9 +35,7 @@
 #include <IC74HC165.h>
 #include <SPI.h>
 #include <LedManager.h>
-#include <ModuleOperatorInterface.h>
-#include <ModuleConfiguration.h>
-#include <FunctionMapper.h>
+#include <ModuleConfigurator.h>
 #include <arraymacros.h>
 
 #include "includes.h"
@@ -192,25 +190,6 @@
 #endif
 
 /**********************************************************************
- * @brief FUNCTION_MAP_ARRAY defines an array initialiser which maps a
- * function code to a function which implements the action associated
- * with each code. FunctionMapper library stuff.
- * 
- * This provides just one function that wipes configuration data from
- * EEPROM. A specialisation of NOP100 that needs to add functions to
- * the function mapper will need to increase FUNCTION_MAPPER_SIZE
- * appropriately.
- */
-#define FUNCTION_MAP_ARRAY { { 255, [](unsigned char i, unsigned char v) -> bool { ModuleConfiguration.erase(); return(true); } }, { 0, 0 } };
-#define FUNCTION_MAPPER_SIZE 0
-
-/**********************************************************************
- * @brief ModuleOperatorInterface library stuff.
- */
-#define LONG_BUTTON_PRESS_INTERVAL 1000UL
-#define DIALOG_INACTIVITY_TIMEOUT 30000UL
-
-/**********************************************************************
  * @brief LedManager library stuff.
  *
  * NOP100 supports two LEDs: one used to indicate CAN bus activity and
@@ -249,12 +228,10 @@ tModuleConfiguration moduleConfiguration = { .structure={ CAN_SOURCE_ADDRESS_DEF
 #endif
 
 /**********************************************************************
- * @brief moduleConfigurator 
+ * @brief ModuleConfigurator callbacks. 
  */
-#ifndef MODULE_CONFIGURATOR
-#define MODULE_CONFIGURATOR
 
-bool processAddress(unsigned int address) {
+bool validateAddress(unsigned int address) {
   return((address >= 0) && (address < sizeof(moduleConfiguration.structure)));
 }
 
@@ -267,8 +244,8 @@ bool processValue(unsigned int address, unsigned char value) {
   }
   return(retval);
 }
-
-#endif
+ 
+ModuleConfigurator moduleConfigurator = ModuleConfigurator(processValue, validateAddress);
 
 /**
  * @brief Declarations of local functions.
@@ -392,10 +369,7 @@ void loop() {
 
   // If the PRG button has been operated, then call the button handler.
   if (PRGButton.toggled()) {
-    switch (ModuleOperatorInterface.handleButtonEvent(PRGButton.read(), (unsigned char) (CodeSwitchPISO.read() & 0xff))) {
-      case ModuleOperatorInterface::MODE_CHANGE:
-        PrgLed.setLedState(0, LedManager::ONCE);
-        break;
+    switch (ModuleConfigurator.handleButtonEvent(PRGButton.read(), (unsigned char) (CodeSwitchPISO.read() & 0xff))) {
       case ModuleOperatorInterface::ADDRESS_ACCEPTED:
         PrgLed.setLedState(0, LedManager::ONCE);
         break;
@@ -403,7 +377,7 @@ void loop() {
         PrgLed.setLedState(0, LedManager::THRICE);
         break;
       case ModuleOperatorInterface::VALUE_ACCEPTED:
-        PrgLed.setLedState(0, LedManager::ONCE);
+        PrgLed.setLedState(0, LedManager::TWICE);
         break;
       case ModuleOperatorInterface::VALUE_REJECTED:
         PrgLed.setLedState(0, LedManager::THRICE);
@@ -414,10 +388,8 @@ void loop() {
   }
 
   // Update LED outputs.
-  CanLed.update(); PrgLed.update();
+  CanLed.update();
   
-  // Make sure that we always eventually revert to normal operation.
-  ModuleOperatorInterface.revertModeMaybe();
 }
 
 void messageHandler(const tN2kMsg &N2kMsg) {

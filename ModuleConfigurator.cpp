@@ -1,48 +1,41 @@
 #include <Arduino.h>
 #include <Button.h>
-#include <ModuleUserInterface.h>
+#include <ModuleConfigurator.h>
   
-ModuleUserInterface::ModuleUserInterface(bool (*processAddress)(unsigned int address), bool (*processValue)(unsigned int address, unsigned char value) {
-  this->processAddress = processAddress;
+ModuleConfigurator::ModuleConfigurator(void (*processValue)(unsigned char address, unsigned char value), bool (*validateAddress)(unsigned int address)=[](unsigned int address){ return(true); }, unsigned long timeout) {
   this->processValue = processValue;
-  this->currentMode = 0;
-  this->currentAddress = -1;
+  this->validateAddress = validateAddress;
+  this->timeout = timeout;
+  this->address = 0;
+  this->addressIsValid = false;
   this->buttonPressedAt = 0UL;
 }
-
-unsigned long ModuleUserInterface::getButtonPressedAt() {
-  return(this->buttonPressedAt);
-}
-
-void ModuleUserInterface::revertModeMaybe() {
-  if (this->revertInterval != 0UL) {
-    if (millis() > (this->buttonPressedAt + this->revertInterval)) {
-      this->currentMode = 0;
-      this->currentAddress = -1;
-    }
-  }
-}
     
-ModuleUserInterface::EventOutcome ModuleUserInterface::handleButtonEvent(bool buttonState, unsigned char value) {
-  EventOutcome retval = MODE_CHANGE;
+ModuleConfigurator::EventOutcome ModuleConfigurator::handleButtonEvent(bool buttonState, unsigned char value) {
   unsigned long now = millis();
 
-  if (buttonState == Button::PRESSED) {
+  if (now > (this->buttonPressedAt + this->timeout)) this->addressIsValid = false;
+
+  if (buttonState == Button::PRESSED) { // button pressed
     this->buttonPressedAt = now;
-  } else {
-    if ((this->buttonPressedAt) && (now < (this->buttonPressedAt + 1000))) {
-      if (this->currentAddress != -1) {
-        retval = (this->processValue((unsigned int) this->currentAddress, value))?VALUE_ACCEPTED:VALUE_REJECTED;
-        this->currentAddress = -1;
-      }
-    } else {
-      if (this->currentAddress == -1) {
-        modeHandlers[this->currentMode]->validateAddress((unsigned int) value)) {
-        this->currentAddress = (int) value;
+  } else { // button released
+    if ((this->buttonPressedAt) && (now > (this->buttonPressedAt + CONFIGURATOR_LONG_BUTTON_PRESS))) { // long press - its an address
+      if (this->validateAdress(value)) {
         retval = ADDRESS_ACCEPTED;
+        this->address = value;
+        this->addressIsValid = true;
       } else {
-        this->currentAddress = -1;
         retval = ADDRESS_REJECTED;
+        this->addressIsValid = false;
+      }
+    } else { // short press - its a value
+      if (this->addressIsValid) {
+        if (this->processValue(this->address, value)) {
+          retval = VALUE_ACCEPTED
+          this->addressIsValid = false;
+        } else {
+          retval = value_REJECTED;
+        }
       }
     }
   }
