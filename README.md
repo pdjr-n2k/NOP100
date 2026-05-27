@@ -1,12 +1,13 @@
 # NOP100
 
-The **NOP100** project implements an
+The **NOP100** project implements a generic
 [NMEA 2000](https://en.wikipedia.org/wiki/NMEA_2000)
-interface module with
+module with on-board support for
 [MikroBUS](https://www.mikroe.com/mikrobus)
 and
 [OneWire]()
-interfaces.
+devices.
+
 Twin MikroBUS sockets allow specialisation of function by the addition of
 [Click](https://www.mikroe.com/click)
 expansion cards and appropriate software extensions.
