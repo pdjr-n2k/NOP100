@@ -38,7 +38,7 @@
 #include <ModuleConfigurator.h>
 #include <arraymacros.h>
 
-#include "includes.h"
+#include <includes.h>
 
 
 /**********************************************************************
@@ -189,11 +189,16 @@
 #define CAN_SOURCE_ADDRESS 0x22
 #endif
 
+#ifndef INSTANCE
+#define INSTANCE 0x00
+#endif
+
 /**********************************************************************
  * @brief LedManager library stuff.
  *
- * NOP100 supports two LEDs: one used to indicate CAN bus activity and
- * one to provide feedback in the configuration user-interface.
+ * NOP100 supports a single LED normally used to indicate CAN bus
+ * activity and otherwise used to provide feedback for the
+ * configuration user-interface.
  */
 #define CAN_LED_UPDATE_INTERVAL 100UL
 
@@ -214,16 +219,17 @@
 #ifndef MODULE_CONFIGURATION
 #define MODULE_CONFIGURATION
 
-typedef union tModuleConfiguration {
+union tModuleConfiguration {
   #pragma pack(push, 1)
   struct {
     byte canSourceAddress;
+    byte instance;
   } structure;
   #pragma pack(pop)
   unsigned char buffer[sizeof(structure)];
 };
 
-tModuleConfiguration moduleConfiguration = { .structure={ CAN_SOURCE_ADDRESS_DEFAULT } };
+tModuleConfiguration moduleConfiguration = { .structure={ CAN_SOURCE_ADDRESS, INSTANCE } };
 
 #endif
 
@@ -231,11 +237,11 @@ tModuleConfiguration moduleConfiguration = { .structure={ CAN_SOURCE_ADDRESS_DEF
  * @brief ModuleConfigurator callbacks. 
  */
 
-bool validateAddress(unsigned int address) {
+bool validateAddress(unsigned char address) {
   return((address >= 0) && (address < sizeof(moduleConfiguration.structure)));
 }
 
-bool processValue(unsigned int address, unsigned char value) {
+bool processValue(unsigned char address, unsigned char value) {
   bool retval = false;
   if ((address >= 0) && (address < sizeof(moduleConfiguration.structure))) {
     moduleConfiguration.buffer[address] = value;
@@ -338,7 +344,8 @@ void setup() {
   #ifdef DEBUG_SERIAL
   Serial.println();
   Serial.println("Starting:");
-  Serial.print("  N2K Source address is "); Serial.println(NMEA2000.GetN2kSource());
+  Serial.print("  CAN Source address is "); Serial.println(moduleConfiguration.structure.canSourceAddress);
+  Serial.print("  N2K instance number is "); Serial.println(moduleConfiguration.structure.instance);
   #endif
 }
 
@@ -369,18 +376,18 @@ void loop() {
 
   // If the PRG button has been operated, then call the button handler.
   if (PRGButton.toggled()) {
-    switch (ModuleConfigurator.handleButtonEvent(PRGButton.read(), (unsigned char) (CodeSwitchPISO.read() & 0xff))) {
-      case ModuleOperatorInterface::ADDRESS_ACCEPTED:
-        PrgLed.setLedState(0, LedManager::ONCE);
+    switch (moduleConfigurator.handleButtonEvent(PRGButton.read(), (unsigned char) (CodeSwitchPISO.read() & 0xff))) {
+      case ModuleConfigurator::ADDRESS_ACCEPTED:
+        CanLed.setLedState(0, LedManager::ONCE);
         break;
-      case ModuleOperatorInterface::ADDRESS_REJECTED:
-        PrgLed.setLedState(0, LedManager::THRICE);
+      case ModuleConfigurator::ADDRESS_REJECTED:
+        CanLed.setLedState(0, LedManager::THRICE);
         break;
-      case ModuleOperatorInterface::VALUE_ACCEPTED:
-        PrgLed.setLedState(0, LedManager::TWICE);
+      case ModuleConfigurator::VALUE_ACCEPTED:
+        CanLed.setLedState(0, LedManager::TWICE);
         break;
-      case ModuleOperatorInterface::VALUE_REJECTED:
-        PrgLed.setLedState(0, LedManager::THRICE);
+      case ModuleConfigurator::VALUE_REJECTED:
+        CanLed.setLedState(0, LedManager::THRICE);
         break;
       default:
         break;
@@ -400,33 +407,6 @@ void messageHandler(const tN2kMsg &N2kMsg) {
   }
 }
 
-#ifndef CONFIGURATION_VALIDATOR
-#define CONFIGURATION_VALIDATOR
-/**
- * @brief ModuleConfiguration validation callback.
- * 
- * ModuleConfiguration uses this callback to validate update values
- * before they are written into the configuration.
- * 
- * @attention Specialisations will probably need to override this
- * function and therefore must define CONFIGURATION_VALIDATOR.
- * 
- * @param index - the configuration address where value will be stored
- * if validation is successful.
- * @param value - the proposed configuration value.
- * @return true - the proposed value is acceptable.
- * @return false - the proposed value is not acceptable.
- */
-bool configurationValidator(unsigned int index, unsigned char value) {
-  switch (index) {
-    case MODULE_CONFIGURATION_CAN_SOURCE_INDEX:
-      return(true);
-    default:
-      return(false);
-  }
-}
-#endif
-
 #ifndef ON_N2K_OPEN
 #define ON_N2K_OPEN
 /**
@@ -438,5 +418,57 @@ bool configurationValidator(unsigned int index, unsigned char value) {
  */
 void onN2kOpen() {
 }
+
 #endif
+
+class tN2kGroupFunctionHandlerForPGN126208 : public tN2kGroupFunctionHandler {
+
+  protected:
+
+    virtual bool HandleRequest(const tN2kMsg &N2kMsg, 
+                               uint32_t TransmissionInterval, 
+                               uint16_t TransmissionIntervalOffset, 
+                               uint8_t  NumberOfParameterPairs,
+                               int iDev);
+
+  bool HandleCommand(const tN2kMsg &N2kMsg, uint8_t PrioritySetting, uint8_t NumberOfParameterPairs, int iDev) {
+    int i;
+    int Index;
+    uint8_t field;
+    size_t InstallationDescriptionSize;
+    char InstallationDescription[Max_N2kConfigurationInfoField_len];
+    tN2kGroupFunctionTransmissionOrPriorityErrorCode pec=N2kgfTPec_Acknowledge;
+    tN2kMsg N2kRMsg;
+
+    SetStartAcknowledge(N2kRMsg, N2kMsg.Source, 126208UL, N2kgfPGNec_Acknowledge, pec, NumberOfParameterPairs);
+
+    StartParseCommandPairParameters(N2kMsg, Index);
+    
+    // Read new field values...
+    for (i = 0; i < NumberOfParameterPairs; i++) {
+      field = N2kMsg.GetByte(Index);
+      switch (field) {
+        case 1: // Module instance
+          InstallationDescriptionSize=Max_N2kConfigurationInfoField_len;
+          moduleConfiguration.structure.instance = N2kMsg.GetByte(Index);
+          AddAcknowledgeParameter(N2kRMsg, i, N2kgfpec_Acknowledge);
+          break;
+        default:
+          AddAcknowledgeParameter(N2kRMsg,i,N2kgfpec_InvalidRequestOrCommandParameterField);
+          break;
+      }
+    }
+    pNMEA2000->SendMsg(N2kRMsg,iDev);
+    return true;
+  }
+
+  public:
+
+    tN2kGroupFunctionHandlerForPGN126208(tNMEA2000 *_pNMEA2000) : tN2kGroupFunctionHandler(_pNMEA2000, 126208L) {
+
+
+    };
+
+};
+
 

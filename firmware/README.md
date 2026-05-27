@@ -7,10 +7,12 @@ The files defines.h, definitions.h, includes.h, loop.h and setup.h
 allow specialisation of NOP100 to a particular application by
 extending and overriding some core functionality.
 
-If the specialisation files are absent, the firmware creates an NMEA
-2000 device with Class Code 10 (System Tools) and Function Code 130
+If specialisation is absent, the firmware creates an NMEA 2000
+device with Class Code 10 (System Tools) and Function Code 130
 (Diagnostic).
-The created device is entirely passive.
+The created device is essentially passive, but will respond to
+PGN 126208 Group Function Handler commands to update its default
+instance address.
 
 Supplying functional content in the specialisation files allows the
 construction of a useful NMEA 2000 application.
